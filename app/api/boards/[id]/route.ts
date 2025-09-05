@@ -136,7 +136,6 @@ export async function GET(request: Request, context: { params: { id: string } })
   .populate({
     path: "lists",
     populate: { path: "tasks" },
-    // strictPopulate: false,  // <<< disable strict populate here
   })
   .lean();
 
