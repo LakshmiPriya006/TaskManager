@@ -5,7 +5,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import CreateBoardModal from "../../components/CreateBoard/page";
 import { jwtDecode } from "jwt-decode";
 
@@ -35,6 +35,19 @@ export default function WorkspaceEmpty() {
   const [boards, setBoards] = useState<BoardType[]>([]);
   const [username, setUsername] = useState<string | null>(null);
   const [assignedTasks, setAssignedTasks] = useState<AssignedTask[]>([]);
+  const [openBoardMenu, setOpenBoardMenu] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenBoardMenu(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // =============================================================
   // Fetch boards when component loads
@@ -155,9 +168,48 @@ export default function WorkspaceEmpty() {
   }
 
   // Add a new board to the list
-  const addBoard = (board: { id: string; title: string }) => {
-    setBoards((prev) => [...prev, { ...board, backgroundColor: "#0079BF", isStarred: false }]);
+  const addBoard = (board: { id: string; title: string; backgroundColor?: string }) => {
+    setBoards((prev) => [...prev, { ...board, backgroundColor: board.backgroundColor || "#0079BF", isStarred: false }]);
   };
+
+  // =============================================================
+  // Delete a board
+  // =============================================================
+  async function deleteBoard(boardId: string, event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const boardToDelete = boards.find(b => b.id === boardId);
+    if (!boardToDelete) return;
+    
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${boardToDelete.title}"? This will also delete all lists and tasks in this board.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/board", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ boardId }),
+      });
+
+      if (res.ok) {
+        setBoards(boards.filter((b) => b.id !== boardId));
+        setOpenBoardMenu(null);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to delete board");
+      }
+    } catch (error) {
+      console.error("Error deleting board:", error);
+      alert("Failed to delete board");
+    }
+  }
 
   // =============================================================
   // Separate starred and unstarred boards
@@ -244,15 +296,41 @@ export default function WorkspaceEmpty() {
                 </h2>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
                   {starredBoards.map((board) => (
-                    <Link
+                    <div
                       key={board.id}
-                      href={`/boards/${encodeURIComponent(board.id)}`}
                       className="relative group rounded-lg shadow hover:shadow-lg transition-all overflow-hidden h-[100px]"
                       style={{ backgroundColor: board.backgroundColor === "#0079BF" ? "#026AA7" : board.backgroundColor }}
                     >
-                      {/* Board Title */}
-                      <div className="p-4 text-white font-semibold">
+                      <Link
+                        href={`/boards/${encodeURIComponent(board.id)}`}
+                        className="block p-4 text-white font-semibold h-full"
+                      >
                         {board.title}
+                      </Link>
+                      
+                      {/* More Vert Menu Button */}
+                      <div className="absolute top-2 right-2" ref={openBoardMenu === board.id ? menuRef : null}>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setOpenBoardMenu(openBoardMenu === board.id ? null : board.id);
+                          }}
+                          className="text-white/70 hover:text-white p-1 rounded hover:bg-white/20 transition-colors"
+                          title="Board options"
+                        >
+                          ⋮
+                        </button>
+                        {openBoardMenu === board.id && (
+                          <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg py-1 z-50 w-36">
+                            <button
+                              onClick={(e) => deleteBoard(board.id, e)}
+                              className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 text-sm"
+                            >
+                              🗑️ Delete Board
+                            </button>
+                          </div>
+                        )}
                       </div>
                       
                       {/* Star Button - Always visible when starred */}
@@ -263,7 +341,7 @@ export default function WorkspaceEmpty() {
                       >
                         ⭐
                       </button>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -280,15 +358,41 @@ export default function WorkspaceEmpty() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
                 {/* Show unstarred boards */}
                 {unstarredBoards.map((board) => (
-                  <Link
+                  <div
                     key={board.id}
-                    href={`/boards/${encodeURIComponent(board.id)}`}
                     className="relative group rounded-lg shadow hover:shadow-lg transition-all overflow-hidden h-[100px]"
                     style={{ backgroundColor: board.backgroundColor === "#0079BF" ? "#026AA7" : board.backgroundColor }}
                   >
-                    {/* Board Title */}
-                    <div className="p-4 text-white font-semibold">
+                    <Link
+                      href={`/boards/${encodeURIComponent(board.id)}`}
+                      className="block p-4 text-white font-semibold h-full"
+                    >
                       {board.title}
+                    </Link>
+                    
+                    {/* More Vert Menu Button */}
+                    <div className="absolute top-2 right-2" ref={openBoardMenu === board.id ? menuRef : null}>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setOpenBoardMenu(openBoardMenu === board.id ? null : board.id);
+                        }}
+                        className="text-white/70 hover:text-white p-1 rounded hover:bg-white/20 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Board options"
+                      >
+                        ⋮
+                      </button>
+                      {openBoardMenu === board.id && (
+                        <div className="absolute right-0 top-8 bg-white rounded-lg shadow-lg py-1 z-50 w-36">
+                          <button
+                            onClick={(e) => deleteBoard(board.id, e)}
+                            className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 text-sm"
+                          >
+                            🗑️ Delete Board
+                          </button>
+                        </div>
+                      )}
                     </div>
                     
                     {/* Star Button - Shows on hover */}
@@ -299,7 +403,7 @@ export default function WorkspaceEmpty() {
                     >
                       ☆
                     </button>
-                  </Link>
+                  </div>
                 ))}
 
                 {/* Create New Board Button - Always visible */}
