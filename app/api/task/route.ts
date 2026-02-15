@@ -1,27 +1,59 @@
+// =============================================================
+// Task API Route - Handles creating, updating, and deleting tasks
+// =============================================================
+
 import { NextRequest, NextResponse } from "next/server";
-import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
-import { Task } from "@/lib/db";
+import { Task, connectDB } from "@/lib/db";
 
 const JWT_SECRET = process.env.JWT_SECRET || "";
 
-export async function POST(req: NextRequest) {
+// Helper function to get user ID from the JWT token
+function getUserIdFromToken(req: NextRequest): string | null {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) return null;
+  
   try {
-
-    const { title, boardId, listId } = await req.json();
-
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-    const userId = decoded?.id;
+    return decoded?.id || null;
+  } catch {
+    return null;
+  }
+}
 
-    if (!userId || !boardId || !listId || !title) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+// =============================================================
+// POST - Create a new task
+// =============================================================
+export async function POST(req: NextRequest) {
+  try {
+    await connectDB();
+    
+    // Get the task data from the request body
+    const { title, boardId, listId, description, dueDate, labels, assignedTo } = await req.json();
+
+    // Check if user is authenticated
+    const userId = getUserIdFromToken(req);
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const newTask = await Task.create({ title, userId, boardId, listId });
+    // Validate required fields
+    if (!title || !boardId || !listId) {
+      return NextResponse.json({ error: "Missing required fields (title, boardId, listId)" }, { status: 400 });
+    }
+
+    // Create the new task with all fields
+    const newTask = await Task.create({
+      title,
+      userId,
+      boardId,
+      listId,
+      description: description || "",
+      dueDate: dueDate || null,
+      labels: labels || [],
+      assignedTo: assignedTo || null,
+    });
 
     return NextResponse.json({ success: true, task: newTask }, { status: 201 });
   } catch (error) {
@@ -30,130 +62,136 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// import mongoose from "mongoose";
-// import { NextRequest, NextResponse } from "next/server";
-// import jwt from "jsonwebtoken";
-// import { Task } from "@/lib/db";
+// =============================================================
+// PATCH - Update an existing task (including moving to different list)
+// =============================================================
+export async function PATCH(req: NextRequest) {
+  try {
+    await connectDB();
+    
+    // Get the task ID and update data from the request body
+    const { taskId, title, description, dueDate, labels, assignedTo, listId } = await req.json();
 
-// const JWT_SECRET = process.env.JWT_SECRET || "";
+    // Check if user is authenticated
+    const userId = getUserIdFromToken(req);
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-// export async function POST(req: NextRequest) {
-//   try {
-//     const { title, boardId, listId } = await req.json();
+    // Validate that we have a task ID
+    if (!taskId) {
+      return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
+    }
 
-//     const authHeader = req.headers.get("authorization");
-//     if (!authHeader) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Find the task first to make sure it exists
+    const existingTask = await Task.findById(taskId);
+    if (!existingTask) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
 
-//     const token = authHeader.split(" ")[1];
-//     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-//     const userId = decoded?.id;
+    // Build the update object - only include fields that were provided
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (dueDate !== undefined) updateData.dueDate = dueDate;
+    if (labels !== undefined) updateData.labels = labels;
+    if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
+    // This allows moving a task to a different list!
+    if (listId !== undefined) updateData.listId = listId;
 
-//     if (!userId || !boardId || !listId || !title) {
-//       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-//     }
+    // Update the task and return the new version
+    const updatedTask = await Task.findByIdAndUpdate(
+      taskId,
+      updateData,
+      { new: true } // Return the updated document
+    );
 
-//     // 💥 Transform IDs into ObjectIds
-//     const boardObjectId = mongoose.Types.ObjectId.isValid(boardId) ? new mongoose.Types.ObjectId(boardId) : null;
-//     const listObjectId = mongoose.Types.ObjectId.isValid(listId) ? new mongoose.Types.ObjectId(listId) : null;
+    return NextResponse.json({ success: true, task: updatedTask });
+  } catch (error) {
+    console.error("Error updating task:", error);
+    return NextResponse.json({ error: "Failed to update task" }, { status: 500 });
+  }
+}
 
-//     if (!boardObjectId || !listObjectId) {
-//       return NextResponse.json({ error: "Invalid boardId or listId" }, { status: 400 });
-//     }
+// =============================================================
+// DELETE - Remove a task
+// =============================================================
+export async function DELETE(req: NextRequest) {
+  try {
+    await connectDB();
+    
+    // Get the task ID from the request body
+    const { taskId } = await req.json();
 
-//     const newTask = await Task.create({
-//       title,
-//       userId,
-//       boardId: boardObjectId,
-//       listId: listObjectId,
-//     });
+    // Check if user is authenticated
+    const userId = getUserIdFromToken(req);
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-//     return NextResponse.json({ success: true, task: newTask }, { status: 201 });
-//   } catch (error) {
-//     console.error("Error creating task:", error);
-//     return NextResponse.json({ error: "Failed to create task" }, { status: 500 });
-//   }
-// }
+    // Validate that we have a task ID
+    if (!taskId) {
+      return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
+    }
 
-// import { NextResponse } from "next/server";
-// import { Task } from "@/lib/db";
-// import { getUserIdFromRequest } from "@/lib/auth";
-// import mongoose from "mongoose";
+    // Find and delete the task
+    const deletedTask = await Task.findByIdAndDelete(taskId);
+    
+    if (!deletedTask) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
 
-// export async function POST(req: Request) {
-//   try {
-//     const { title, boardId, listId } = await req.json();
+    return NextResponse.json({ success: true, message: "Task deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting task:", error);
+    return NextResponse.json({ error: "Failed to delete task" }, { status: 500 });
+  }
+}
 
-//     if (!title?.trim() || !boardId || !listId) {
-//       return NextResponse.json(
-//         { error: "Missing title, boardId, or listId" },
-//         { status: 400 }
-//       );
-//     }
+// =============================================================
+// GET - Fetch tasks (supports fetching assigned tasks)
+// =============================================================
+export async function GET(req: NextRequest) {
+  try {
+    await connectDB();
+    
+    // Check if user is authenticated
+    const userId = getUserIdFromToken(req);
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-//     if (
-//       !mongoose.Types.ObjectId.isValid(boardId) ||
-//       !mongoose.Types.ObjectId.isValid(listId)
-//     ) {
-//       return NextResponse.json(
-//         { error: "Invalid boardId or listId" },
-//         { status: 400 }
-//       );
-//     }
+    // Check if we're fetching assigned tasks
+    const { searchParams } = new URL(req.url);
+    const fetchAssigned = searchParams.get("assigned") === "true";
 
-//     const userId = await getUserIdFromRequest(req);
-//     if (!userId) {
-//       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-//     }
+    if (fetchAssigned) {
+      // Need to import Board and List for populating board/list titles
+      const { Board, List } = await import("@/lib/db");
+      
+      // Fetch tasks assigned to this user
+      const tasks = await Task.find({ assignedTo: userId }).lean();
+      
+      // Enrich tasks with board and list titles
+      const enrichedTasks = await Promise.all(
+        tasks.map(async (task: any) => {
+          const board = await Board.findById(task.boardId).select("title").lean();
+          const list = await List.findById(task.listId).select("title").lean();
+          return {
+            ...task,
+            boardTitle: board?.title || "Unknown Board",
+            listTitle: list?.title || "Unknown List",
+          };
+        })
+      );
 
-//     const newTask = new Task({
-//       title: title.trim(),
-//       userId,
-//       boardId,
-//       listId,
-//     });
+      return NextResponse.json({ success: true, tasks: enrichedTasks });
+    }
 
-//     await newTask.save();
-
-//     return NextResponse.json({ success: true, task: newTask });
-//   } catch (error) {
-//     console.error(error);
-//     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-//   }
-// }
-
-// import mongoose from "mongoose";
-// import { NextResponse } from "next/server";
-// import { List } from "@/lib/db";
-// import { getUserIdFromRequest } from "@/lib/auth";
-
-// export async function POST(req: Request) {
-//   try {
-//     const { title, boardId } = await req.json();
-
-//     if (!title?.trim()) {
-//       return NextResponse.json({ error: "Missing title" }, { status: 400 });
-//     }
-
-//     if (!mongoose.Types.ObjectId.isValid(boardId)) {
-//       return NextResponse.json({ error: "Invalid boardId" }, { status: 400 });
-//     }
-
-//     const userId = await getUserIdFromRequest(req);
-//     if (!userId) {
-//       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-//     }
-
-//     const newList = new List({
-//       title: title.trim(),
-//       userId,
-//       boardId: new mongoose.Types.ObjectId(boardId), // ✅ force ObjectId
-//     });
-
-//     await newList.save();
-
-//     return NextResponse.json({ success: true, list: newList });
-//   } catch (error) {
-//     console.error("List creation error:", error); // log the real error
-//     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-//   }
-// }
+    // Default: return empty (can extend for other use cases)
+    return NextResponse.json({ success: true, tasks: [] });
+  } catch (error) {
+    console.error("Error fetching tasks:", error);
+    return NextResponse.json({ error: "Failed to fetch tasks" }, { status: 500 });
+  }
+}

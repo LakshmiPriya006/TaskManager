@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { Board } from "@/lib/db";
+import { Board, connectDB } from "@/lib/db";
 import { getUserIdFromRequest } from "@/lib/auth"; // your JWT extraction helper
 
 export async function POST(req: Request) {
   try {
+    await connectDB();
     const { title } = await req.json();
 
     // Extract user ID from JWT token in Authorization header

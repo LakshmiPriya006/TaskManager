@@ -66,12 +66,38 @@ import mongoose from "mongoose";
 
 const MONGODB_URI = process.env.MONGODB_URI || "";
 
-// Establish connection only once
-if (!mongoose.connections[0].readyState) {
-  mongoose.connect(MONGODB_URI, {
-    dbName: "Task-Manager",
-  }).then(() => console.log("✅ MongoDB connected"))
-    .catch((err) => console.error("❌ MongoDB connection error:", err));
+// Cached connection for serverless
+let cached = (global as any).mongoose;
+
+if (!cached) {
+  cached = (global as any).mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+    };
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+      console.log("✅ MongoDB connected");
+      return mongoose;
+    });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    console.error("❌ MongoDB connection error:", e);
+    throw e;
+  }
+
+  return cached.conn;
 }
 
 // Define User schema
@@ -80,10 +106,14 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
 }, { timestamps: true });
 
-// Board schema - NO lists array, only virtual
+// Board schema - with new fields for background color and starred status
 const boardSchema = new mongoose.Schema({
   title: { type: String, required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  // NEW: Background color for the board (default is blue)
+  backgroundColor: { type: String, default: "#0079BF" },
+  // NEW: Whether the board is starred/favorited
+  isStarred: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Virtual for lists
@@ -115,11 +145,20 @@ ListSchema.virtual("tasks", {
 ListSchema.set("toObject", { virtuals: true });
 ListSchema.set("toJSON", { virtuals: true });
 
+// Task schema - with new fields for description, due date, labels, and assignment
 const taskSchema = new mongoose.Schema({
   title: { type: String, required: true },
   userId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
   boardId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'Board' },
   listId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'List' },
+  // NEW: Task description (optional)
+  description: { type: String, default: "" },
+  // NEW: Due date for the task (optional)
+  dueDate: { type: Date, default: null },
+  // NEW: Array of label strings (e.g., ["urgent", "bug", "feature"])
+  labels: { type: [String], default: [] },
+  // NEW: User assigned to this task (optional reference to User)
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 }, { timestamps: true });
 
 // Create or reuse models
@@ -128,4 +167,4 @@ const Board = mongoose.models.Board || mongoose.model("Board", boardSchema);
 const List = mongoose.models.List || mongoose.model("List", ListSchema);
 const Task = mongoose.models.Task || mongoose.model('Task', taskSchema);
 
-export { User, Board, List, Task };
+export { User, Board, List, Task, connectDB };

@@ -126,12 +126,13 @@
 // }
 
 import { NextResponse } from "next/server";
-import { Board } from "@/lib/db";
+import { Board, connectDB } from "@/lib/db";
 
 export async function GET(request: Request, context: { params: { id: string } }) {
   const { id } = context.params;
 
   try {
+    await connectDB();
     const board = await Board.findById(id)
   .populate({
     path: "lists",
@@ -148,6 +149,40 @@ export async function GET(request: Request, context: { params: { id: string } })
     return NextResponse.json(board);
   } catch (error) {
     console.error(error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+// =============================================================
+// PATCH - Update board properties (star, background color, title)
+// =============================================================
+export async function PATCH(request: Request, context: { params: { id: string } }) {
+  const { id } = context.params;
+
+  try {
+    await connectDB();
+    
+    const { isStarred, backgroundColor, title } = await request.json();
+
+    // Build update object with only provided fields
+    const updateData: any = {};
+    if (isStarred !== undefined) updateData.isStarred = isStarred;
+    if (backgroundColor !== undefined) updateData.backgroundColor = backgroundColor;
+    if (title !== undefined) updateData.title = title;
+
+    const updatedBoard = await Board.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true }
+    );
+
+    if (!updatedBoard) {
+      return NextResponse.json({ error: "Board not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, board: updatedBoard });
+  } catch (error) {
+    console.error("Error updating board:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
