@@ -7,7 +7,7 @@ export default function Home() {
       {/* Logo + Title */}
       <div className="flex items-center space-x-2 mb-6">
         <img src="https://res.cloudinary.com/ds9pcviv3/image/upload/v1747808561/Screenshot_2025-05-21_115219_ujwhvb.png" alt="Trello Logo" width={32} height={32} />
-        <h1 className="text-3xl font-bold font-cursive">Task Manager</h1>
+        <h1 className="text-3xl font-bold font-cursive">ProTask Manager</h1>
       </div>
 
       {/* Card */}
@@ -27,7 +27,7 @@ export default function Home() {
         {/* Log in with Trello */}
         <Link href="/signin">
         <button className="bg-[#1976ad] text-white px-5 py-2 rounded-full text-sm font-semibold mb-2 w-full hover:opacity-90">
-          LOG IN WITH TRELLO
+          LOG IN TO WORKSPACE
         </button>
         </Link>
 
