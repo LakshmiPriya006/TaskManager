@@ -8,7 +8,10 @@ export async function getUserIdFromRequest(req: Request): Promise<string | null>
     if (!authHeader?.startsWith("Bearer ")) return null;
 
     const token = authHeader.split(" ")[1];
-    if (!token) return null;
+    if (!token || token === "null" || token === "undefined") return null;
+    
+    // Basic JWT format check (three parts separated by dots)
+    if (token.split(".").length !== 3) return null;
 
     const decoded = jwt.verify(token, JWT_SECRET) as { id?: string };
     return decoded?.id ?? null;

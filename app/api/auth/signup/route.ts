@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { User } from "@/lib/db";
+import { User, Board, connectDB } from "@/lib/db";
 
 const JWT_SECRET = process.env.JWT_SECRET || "defaultsecret";
 
 export async function POST(req: Request) {
   try {
+    await connectDB();
     const { email, password } = await req.json();
  
     
@@ -22,6 +23,15 @@ export async function POST(req: Request) {
     const newUser = new User({ email, password: hashedPassword });
     await newUser.save();
 
+    // =============================================================
+    // Auto-create "My Personal Board" for new users
+    // =============================================================
+    await Board.create({
+      title: "My Personal Board",
+      userId: newUser._id,
+      backgroundColor: "#0079BF",  // Default blue color
+      isStarred: true,  // Star it by default so it's easy to find
+    });
     
     // const token = jwt.sign({ id: newUser._id, email: newUser.email }, JWT_SECRET, {
     //   expiresIn: "1d",
